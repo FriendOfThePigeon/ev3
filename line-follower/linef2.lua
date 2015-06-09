@@ -7,6 +7,7 @@ machine = {
 	current_direction = nil,
 	positions_at_start_of_spin = nil,
 	last_blue_reading = nil
+	debug_enabled = false
 }
 
 function machine:find_devices()
@@ -15,70 +16,23 @@ function machine:find_devices()
 	self.wheel_spacing = 200
 	self.rotations_for_complete_spin = self.wheel_spacing / self.wheel_dia
 	self.left_motor = LargeMotor('outB')
-	self.left_motor:setSpeedRegulationEnabled('on')
+	self.left_motor:setSpeedRegulationEnabled('off')
 	self.right_motor = LargeMotor('outC')
-	self.right_motor:setSpeedRegulationEnabled('on')
+	self.right_motor:setSpeedRegulationEnabled('off')
 	self.beeper = Sound()
 	self.csensor = ColorSensor()
 	self.csensor:setMode("RGB-RAW")
 end
 
-function machine:csensor()
-	print("machine:csensor()")
-	self.csensor:setMode(ColorSensor.ModeColor)
-	self.csensor:setMode(ColorSensor.ModeReflect)
-	self.csensor:value()
-	self.csensor:floatValue()
-end
-
 function machine:sleep(s)
-	print("machine:sleep(s)")
+	if seconds >= 1 then
+		self:debug("machine:sleep(s)")
+	end
 	os.execute("sleep " .. s)
 end
 
-function machine:beep_start()
-	print("machine:beep_start()")
-	self.beeper.tone(300, 100)
-	self.sleep(0.1)
-	self.beeper.tone(400, 100)
-	self.sleep(0.1)
-end
-
-function machine:start()
-	print("machine:start()")
-	self:find_devices()
-	self:beep_start()
-	self.current_direction = self:get_random_direction()
-	return self:start_driving_forward()
-end
-
-function machine:stop_motor(motor)
-	print("machine:stop_motor(motor)")
-	motor:setStopCommand('coast')
-	motor:setCommand('stop')
-end
-
-function machine:change_motor_speeds(left, right)
-	print("machine:change_motor_speeds(left, right)")
-	left_motor:setDutyCycleSP(left)
-	right_motor:setDutyCycleSP(right)
-	-- We could use run-forever but it seems more likely that we made a mistake in our code 
-	-- than that we don't need any steering correction for >30s.
-	for m in left_motor, right_motor do
-		m:stop()
-		m:setTimeSP(30000)
-		m:command("run-timed")
-	end
-end
-
-function machine:start_driving_forward() 
-	print("machine:start_driving_forward() ")
-	self:change_motor_speeds(100, 100)
-	return self:blue_1()
-end
-
 function machine:get_colors() 
-	print("machine:get_colors() ")
+	self:debug("machine:get_colors()")
 	result = {}
 	result['r'] = self.csensor:value(0)
 	result['g'] = self.csensor:value(1)
@@ -86,12 +40,24 @@ function machine:get_colors()
 	return result
 end
 
+function machine:print_colors()
+	rgb = self:get_colors()
+	out = "[" .. rgb['r'] .. ", " .. rgb['g'] .. ", " .. rgb['b'] .. "]"
+	if rgb['b'] > 0 then
+		out = out .. " => [" .. rgb['r']/rgb['b'] .. ", " .. rgb['g'] / rgb['b'] .. "]"
+	end
+	out = out .. " => " .. 100 * rgb['b'] / 65
+	print(out)
+end
+
 function machine:get_blue_percent()
-	print("machine:get_blue_percent()")
+	self:debug("machine:get_blue_percent()")
 	rgb = self:get_colors()
 	result = 0
-	if (rgb['b'] ~= 0) and (rgb['g'] / rgb['b'] < 0.95) and (rgb['r'] / rgb['b'] < 0.75) then
-		result = 100 * rgb['b'] / 75
+	-- Typical strong blue is approx. [r, g, b] = [15, 45, 65]
+	-- But blue can read [50, 140, 145]
+	if (rgb['b'] ~= 0) and (rgb['g'] / rgb['b'] < 1.1) and (rgb['r'] / rgb['b'] < 0.60) then
+		result = 100 * rgb['b'] / 65
 		if result > 100 then
 			result = 100
 		end
@@ -99,6 +65,80 @@ function machine:get_blue_percent()
 	self.last_blue_reading = self.this_blue_reading
 	self.this_blue_reading = result
 	return result
+end
+
+function machine:sleep_a_little()
+	print("machine:sleep_a_little()")
+	self:sleep(0.1)
+end
+
+function machine:beep(pitch, duration)
+	print("machine:beep(pitch, duration)")
+	self.beeper.tone(pitch, duration)
+	self:sleep(duration * 0.001)
+end
+
+function machine:change_motor_speeds(left, right)
+	print("machine:change_motor_speeds(" .. left .. ", " .. right .. ")")
+	self.left_motor:setDutyCycleSP(left)
+	self.right_motor:setDutyCycleSP(right)
+	-- We could use run-forever but it seems more likely that we made a mistake in our code 
+	-- than that we don't need any steering correction for >30s.
+	for i, m in ipairs({self.left_motor, self.right_motor}) do
+		m:setCommand("stop")
+		m:setTimeSP(30000)
+		m:setCommand("run-timed")
+	end
+end
+
+function machine:stop_motors()
+	for i, m in ipairs({self.left_motor, self.right_motor}) do
+		m:setCommand("stop")
+	end
+end
+
+function machine:beep_fanfare()
+	print("machine:beep_fanfare()")
+	self:beep(300, 100)
+	self:beep(400, 50)
+	self:sleep(0.05)
+	self:beep(300, 100)
+	self:beep(400, 400)
+end
+
+function machine:beep_here_we_go()
+	print("machine:beep_here_we_go()")
+	self:beep(300, 25)
+	self:beep(300, 25)
+	self:beep(300, 25)
+end
+
+function machine:start()
+	print("machine:start()")
+	self:find_devices()
+	self:beep_fanfare()
+	self.current_direction = self:randomly_chosen_direction()
+	return self:start_driving_forward()
+end
+
+function machine:randomly_chosen_direction() 
+	print("machine:randomly_chosen_direction() ")
+	if math.random() < 0.5 then
+		return -1
+	else
+		return 1
+	end
+end
+
+function machine:other_direction(direction)
+	print("machine:other_direction(direction)")
+	return 0 - direction
+end
+
+function machine:start_driving_forward() 
+	print("machine:start_driving_forward() ")
+	self:change_motor_speeds(100, 100)
+	return self:blue_1()
 end
 
 function machine:sleep_a_little()
@@ -117,20 +157,6 @@ function machine:blue_1()
 	end
 	self:sleep_a_little()
 	return self:blue_1()
-end
-
-function machine:randomly_chosen_direction() 
-	print("machine:randomly_chosen_direction() ")
-	if math.random() < 0.5 then
-		return -1
-	else
-		return 1
-	end
-end
-
-function machine:other_direction(direction)
-	print("machine:other_direction(direction)")
-	return 0 - direction
 end
 
 function machine:get_directions()
@@ -170,6 +196,18 @@ function machine:start_turning()
 		self:change_motor_speeds(100, 80)
 	end
 	return self:blue_lower()
+end
+
+function machine:get_spin_since_mark()
+	l = self.left_motor:position()
+	rotations = math.abs(l - self.positions_at_start_of_spin['l']) / 360
+	return rotations / self.rotations_for_complete_spin
+end
+
+function machine:debug(msg)
+	if self.debug_enabled then
+		print(msg)
+	end
 end
 
 function machine:blue_lower()
@@ -234,9 +272,7 @@ function machine:blue_2()
 	if b > 0 then
 		return self:beep_happy()
 	end
-	l = left_motor:position()
-	rotations = math.abs(l - self.positions_at_start_of_spin['l']) / 360
-	if rotations < self.rotations_for_complete_spin then
+	if self:get_spin_since_mark() < 1.0 then
 		return self:blue_2()
 	end
 	for i = 250, 150, -10 do
