@@ -6,7 +6,7 @@ machine = {
 	directions = {},
 	current_direction = nil,
 	positions_at_start_of_spin = nil,
-	last_blue_reading = nil
+	last_blue_reading = nil,
 	debug_enabled = false
 }
 
@@ -25,7 +25,7 @@ function machine:find_devices()
 end
 
 function machine:sleep(s)
-	if seconds >= 1 then
+	if s >= 1 then
 		self:debug("machine:sleep(s)")
 	end
 	os.execute("sleep " .. s)
@@ -137,7 +137,7 @@ end
 
 function machine:start_driving_forward() 
 	print("machine:start_driving_forward() ")
-	self:change_motor_speeds(100, 100)
+	self:change_motor_speeds(60, 60)
 	return self:blue_1()
 end
 
@@ -147,6 +147,7 @@ function machine:sleep_a_little()
 end
 
 function machine:blue_1() 
+	-- We are driving forward - checking that the blue reading doesn't drop.
 	print("machine:blue_1() ")
 	b = self:get_blue_percent()
 	if b == 0 then
@@ -155,7 +156,7 @@ function machine:blue_1()
 	if b < 75 then
 		return self:beep_hmm()
 	end
-	self:sleep_a_little()
+	--self:sleep_a_little()
 	return self:blue_1()
 end
 
@@ -163,24 +164,29 @@ function machine:get_directions()
 	print("machine:get_directions()")
 	if #self.corrections == 0 then
 		direction1 = self:randomly_chosen_direction()
+		print("randomly chose " .. direction1)
 	elseif #self.corrections == 1 then
 		direction1 = self.corrections[1]
+		print("only one prev correction - choosing same (" .. direction1 .. ")")
 	elseif self.corrections[1] == self.corrections[2] then
-		direction1 = self.corrections[2]
-	else 
 		direction1 = self.corrections[1]
+		print("last two corrections matched - choosing same (" .. direction1 .. ")")
+	else 
+		--direction1 = self.corrections[2]
+		--print("last two corrections didn't match - choosing other (" .. direction1 .. ")")
+		direction1 = self.corrections[1]
+		print("last two corrections didn't match - choosing last one (" .. direction1 .. ")")
 	end
 	direction2 = self:other_direction(direction1)
-	return [ direction1, direction2 ]
+	return { direction1, direction2 }
 end
 
-function machine:machine:beep_hmm()
+function machine:beep_hmm()
 	print("machine:machine:beep_hmm()")
+	self:stop_motors()
 	self.beeper.tone(200, 100)
-	self.sleep(0.1)
-	self.beeper.tone(180, 200)
-	self.sleep(0.2)
-	self.directions = get_directions()
+	self:sleep(0.1)
+	self.directions = self:get_directions()
 	return self:start_turning()
 end
 
@@ -191,9 +197,9 @@ function machine:start_turning()
 	end
 	self.current_direction = table.remove(self.directions)
 	if self.current_direction < 0 then
-		self:change_motor_speeds(80, 100)
+		self:change_motor_speeds(30, 60)
 	else
-		self:change_motor_speeds(100, 80)
+		self:change_motor_speeds(60, 30)
 	end
 	return self:blue_lower()
 end
@@ -224,7 +230,7 @@ function machine:blue_lower()
 	end
 	-- Turn harder
 	l = self.left_motor:dutyCycle()
-	r = serf.right_motor:dutyCycle()
+	r = self.right_motor:dutyCycle()
 	if l + r > 0 then
 		if l < r then
 			l = l - 20
@@ -240,10 +246,11 @@ end
 
 function machine:beep_happy()
 	print("machine:beep_happy()")
+	self:stop_motors()
 	self.beeper.tone(350, 100)
-	self.sleep(0.1)
+	self:sleep(0.1)
 	self.beeper.tone(350, 100)
-	self.sleep(0.1)
+	self:sleep(0.1)
 	if #self.corrections >= 2 then
 		table.remove(self.corrections)
 	end
@@ -254,19 +261,27 @@ end
 function machine:beep_uh_oh()
 	print("machine:beep_uh_oh()")
 	self.positions_at_start_of_spin = {
-		'l' = left_motor:position()
-		'r' = right_motor:position()
+		l = self.left_motor:position(),
+		r = self.right_motor:position()
 	}
+	self:stop_motors()
+	self.beeper.tone(180, 200)
+	self:sleep(0.1)
+	self.beeper.tone(160, 200)
+	self:sleep(0.2)
 	-- Start turning on the spot
-	if current_direction < 0 then
-		self.change_motor_speeds(-50, 50)
+	self.directions = self:get_directions()
+	self.current_direction = table.remove(self.directions)
+	if self.current_direction < 0 then
+		self:change_motor_speeds(50, -50)
 	else
-		self.change_motor_speeds(-50, 50)
+		self:change_motor_speeds(-50, 50)
 	end
 	return self:blue_2()
 end
 
 function machine:blue_2()
+	-- We have lost the line and are spinning, looking for blue.
 	print("machine:blue_2()")
 	b = self:get_blue_percent()
 	if b > 0 then
@@ -277,7 +292,7 @@ function machine:blue_2()
 	end
 	for i = 250, 150, -10 do
 		self.beeper.tone(i, 100)
-		self.sleep(0.1)
+		self:sleep(0.1)
 	end
 	return nil -- end program
 end
