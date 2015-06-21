@@ -9,7 +9,7 @@ machine = {
 	last_blue_reading = nil,
 	debug_enabled = false,
 	notes_hmm = { { 200, 100 } },
-	notes_uh_oh = { { 180, 100 }, { 160, 200 } }
+	notes_uh_oh = { { 180, 100 }, { 160, 200 } },
 	notes_lost = { { 160, 300 } },
 	notes_happy = { { 350, 100 }, { 350, 100 } },
 	notes_fanfare = { { 300, 100 }, { 400, 50 }, { 300, 100 }, { 400, 400 } }
@@ -179,7 +179,7 @@ function machine:play(notes)
 	for ignore, note in ipairs(notes) do
 		self.beeper.tone(note[1], note[2])
 		self:sleep(0.1)
-	done
+	end
 end
 
 function machine:beep_hmm()
@@ -213,9 +213,9 @@ function machine:spin_to_next_mark()
 	self.current_direction = table.remove(self.directions, 1)
 	print("current_direction now " .. self.current_direction)
 	if self.current_direction < 0 then
-		self:change_motor_speeds(50, -50)
-	else
 		self:change_motor_speeds(-50, 50)
+	else
+		self:change_motor_speeds(50, -50)
 	end
 	return self:blue_2()
 end
@@ -227,7 +227,7 @@ function machine:blue_2()
 		return self:back_on_track()
 	end
 	spin = self:get_spin_since_mark()
-	print("machine:blue_2() [" .. spin .. "]")
+	print("machine:blue_2() [" .. spin .. " <=> " .. self.current_direction .. "]")
 	if (self.current_direction > 0 and spin < self.current_direction)
 		or (self.current_direction < 0 and spin > self.current_direction) then
 		return self:blue_2() -- Not reached mark - keep spinning
@@ -237,7 +237,7 @@ end
 
 function machine:get_spin_since_mark()
 	l = self.left_motor:position()
-	degree_rotations = math.abs(l - self.positions_at_start_of_spin['l'])
+	degree_rotations = l - self.positions_at_start_of_spin['l']
 	return degree_rotations / self.rotations_for_complete_spin
 end
 
